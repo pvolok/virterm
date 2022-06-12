@@ -1,0 +1,38 @@
+[package]
+name = "virterm"
+description = "Run and control process in virtual terminal"
+version = "0.0.1"
+edition = "2021"
+license = "MIT"
+
+include = ["/src"]
+
+[profile.release]
+strip = "symbols"
+opt-level = "z" # optimize for binary size
+lto = true # link time optimization
+panic = "abort"
+codegen-units = 1
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "virterm"
+path = "src/main.rs"
+
+[dependencies]
+ab_glyph = "0.2.15"
+ansi_colours = "1.1.1"
+anyhow = "1.0.44"
+assert_matches = "1.5.0"
+clap = { version = "3.1.8", features = ["cargo"] }
+env_logger = "0.9.0"
+flexi_logger = { version = "0.22.3", default-features = false, features = ["colors"] }
+image = "0.24.2"
+libc = "0.2.120"
+log = "0.4.14"
+portable-pty = "0.7.0"
+serde = { version = "1.0.136", features = ["derive"] }
+serde_yaml = "0.8.24"
+tokio = { version = "1", features = ["full"] }
+vt100 = "0.15.1"
