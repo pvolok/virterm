@@ -37,11 +37,7 @@ async fn main() -> () {
 
 async fn run_cli() -> anyhow::Result<()> {
   let matches = command!()
-    .arg(arg!(-c --config [PATH] "Config path [default: mprocs.yaml]"))
-    .arg(arg!(-s --server [PATH] "Remote control server address. Example: 127.0.0.1:4050."))
-    .arg(arg!(--ctl [JSON] "Send json encoded command to running mprocs"))
     .arg(arg!(<script> "Command to run"))
-    .trailing_var_arg(true)
     .get_matches();
 
   let script = matches.value_of("script").unwrap();

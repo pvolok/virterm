@@ -1,9 +1,25 @@
 [package]
 name = "virterm"
-description = "Run and control process in virtual terminal"
+description = "Run and control a process in a virtual terminal"
 version = "0.0.1"
 edition = "2021"
+repository = "https://github.com/pvolok/virterm"
+authors = ["Pavel Volokitin <pavelvolokitin@gmail.com>"]
 license = "MIT"
+categories = [
+  "command-line-interface",
+  "command-line-utilities",
+  "development-tools"
+]
+keywords = [
+  "cli",
+  "terminal",
+  "test",
+  "testing",
+  "tui",
+  "utility"
+]
+
 
 include = ["/src"]
 
