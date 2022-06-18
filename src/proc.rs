@@ -4,6 +4,11 @@ use anyhow::{bail, Result};
 use portable_pty::{ChildKiller, MasterPty};
 use tokio::sync::Mutex;
 
+use crate::{
+  encode_term::{encode_key, KeyCodeEncodeModes},
+  key::Key,
+};
+
 pub struct Proc {
   pub master: Box<dyn MasterPty + Send>,
   pub killer: Box<dyn ChildKiller + Send + Sync>,
@@ -66,6 +71,27 @@ impl Proc {
     };
 
     Ok(proc)
+  }
+
+  pub async fn send_key(&mut self, key: &Key) {
+    let application_cursor_keys =
+      self.vt.lock().await.screen().application_cursor();
+    let encoder = encode_key(
+      key,
+      KeyCodeEncodeModes {
+        enable_csi_u_key_encoding: false,
+        application_cursor_keys,
+        newline_mode: false,
+      },
+    );
+    match encoder {
+      Ok(encoder) => {
+        self.master.write_all(encoder.as_bytes()).unwrap();
+      }
+      Err(_) => {
+        log::warn!("Failed to encode key: {}", key.to_string());
+      }
+    }
   }
 
   pub async fn wait(&mut self) -> Result<()> {

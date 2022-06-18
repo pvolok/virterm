@@ -2,11 +2,15 @@ use std::time::Duration;
 
 use anyhow::{bail, Result};
 
+use crate::key::Key;
+
 #[derive(Debug)]
 pub enum Command {
   Start(Vec<String>),
+  SendKeys(Vec<Key>),
   Kill,
   Wait,
+
   Sleep(Duration),
   Print(String),
   DumpPng(String),
@@ -53,6 +57,24 @@ impl<'inst> CommandParser<'inst> {
           };
           Ok(Some(cmd))
         }
+        "send_keys" => {
+          let mut keys = Vec::new();
+          loop {
+            match self.next_token()? {
+              Token::String(str) => {
+                for ch in str.chars() {
+                  keys.push(Key::from_char(ch));
+                }
+              }
+              Token::Key(key) => keys.push(key),
+              Token::Eof => break,
+              _ => {
+                bail!("The 'send-keys' command accepts strings and keys only")
+              }
+            }
+          }
+          Ok(Some(Command::SendKeys(keys)))
+        }
         "kill" => Ok(Some(Command::Kill)),
         "wait" => Ok(Some(Command::Wait)),
         "sleep" => {
@@ -85,7 +107,11 @@ impl<'inst> CommandParser<'inst> {
         }
         cmd => bail!("Unknown command: {}", cmd),
       },
-      Token::String(_) | Token::Arg(_) | Token::Int(_) | Token::Duration(_) => {
+      Token::String(_)
+      | Token::Arg(_)
+      | Token::Int(_)
+      | Token::Duration(_)
+      | Token::Key(_) => {
         bail!("Expected command identifier")
       }
       Token::Eof => Ok(None),
@@ -108,6 +134,9 @@ impl<'inst> CommandParser<'inst> {
         Token::Ident(s)
       };
       Ok(tok)
+    } else if ch == '<' {
+      let key = self.take_key()?;
+      Ok(Token::Key(key))
     } else if ch.is_digit(10) {
       let num = self.take_number()?;
       let tok = if self.peek_char().is_ascii_alphabetic() {
@@ -180,6 +209,22 @@ impl<'inst> CommandParser<'inst> {
     Ok(buf)
   }
 
+  fn take_key(&mut self) -> Result<Key> {
+    let mut buf = String::new();
+    loop {
+      match self.take_char() {
+        '>' => {
+          buf.push('>');
+          break;
+        }
+        '\0' => bail!("Unclosed key literal"),
+        ch => buf.push(ch),
+      }
+    }
+    let key = Key::parse(buf.as_str())?;
+    Ok(key)
+  }
+
   fn take_ident(&mut self) -> Result<String> {
     let mut buf = String::new();
     loop {
@@ -216,5 +261,6 @@ enum Token {
   Arg(String),
   Int(u32),
   Duration(Duration),
+  Key(Key),
   Eof,
 }

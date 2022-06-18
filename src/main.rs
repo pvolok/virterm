@@ -1,6 +1,8 @@
 mod command;
 mod dump_png;
 mod dump_txt;
+mod encode_term;
+mod key;
 mod proc;
 
 use std::ffi::OsString;
@@ -94,6 +96,12 @@ async fn main_loop(script: &str) -> Result<()> {
           log::info!("CMD: {:?}", cmd);
           match cmd {
             Command::Start(args) => state.start_prog(args)?,
+            Command::SendKeys(keys) => {
+              let proc = state.proc()?;
+              for key in keys {
+                proc.send_key(&key).await;
+              }
+            }
             Command::Kill => state.proc()?.killer.kill()?,
             Command::Wait => state.proc()?.wait().await?,
             Command::Sleep(delay) => tokio::time::sleep(delay).await,
