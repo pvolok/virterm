@@ -11,6 +11,8 @@ pub enum Command {
   Kill,
   Wait,
 
+  WaitText { text: String, timeout: Duration },
+
   Sleep(Duration),
   Print(String),
   DumpPng(String),
@@ -69,7 +71,7 @@ impl<'inst> CommandParser<'inst> {
               Token::Key(key) => keys.push(key),
               Token::Eof => break,
               _ => {
-                bail!("The 'send-keys' command accepts strings and keys only")
+                bail!("The 'send_keys' command accepts strings and keys only")
               }
             }
           }
@@ -77,6 +79,37 @@ impl<'inst> CommandParser<'inst> {
         }
         "kill" => Ok(Some(Command::Kill)),
         "wait" => Ok(Some(Command::Wait)),
+
+        "wait_text" => {
+          let mut text = None;
+          let mut timeout = Duration::from_secs(1);
+          loop {
+            match self.next_token()? {
+              Token::String(s) => {
+                if text != None {
+                  bail!("The 'wait_text' command expects only one string");
+                }
+                text = Some(s);
+              }
+              Token::Arg(arg) => match arg.as_str() {
+                "timeout" => match self.next_token()? {
+                  Token::Duration(t) => timeout = t,
+                  _ => bail!("The 'timeout' arg expects a duration"),
+                },
+                _ => bail!("Unexpected argument '{}'", arg),
+              },
+              Token::Eof => break,
+              _ => bail!("The 'wait_text' command expects a string"),
+            }
+          }
+          let text = if let Some(text) = text {
+            text
+          } else {
+            bail!("The 'wait_text' command expects a string")
+          };
+          Ok(Some(Command::WaitText { text, timeout }))
+        }
+
         "sleep" => {
           let dur = match self.next_token()? {
             Token::Duration(dur) => dur,

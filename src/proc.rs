@@ -27,9 +27,9 @@ impl Proc {
         pixel_width: 0,
         pixel_height: 0,
       })?;
-    let mut child = pair
-      .slave
-      .spawn_command(portable_pty::CommandBuilder::from_argv(args))?;
+    let mut cmd = portable_pty::CommandBuilder::from_argv(args);
+    cmd.cwd(std::env::current_dir()?.as_os_str());
+    let mut child = pair.slave.spawn_command(cmd)?;
     let killer = child.clone_killer();
 
     let (wait_send, wait) = tokio::sync::oneshot::channel();

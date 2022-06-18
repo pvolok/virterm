@@ -6,6 +6,7 @@ mod key;
 mod proc;
 
 use std::ffi::OsString;
+use std::time::Duration;
 
 use anyhow::{bail, Result};
 use clap::{arg, command};
@@ -25,7 +26,10 @@ async fn main() -> () {
 
   match run_cli().await {
     Ok(()) => (),
-    Err(err) => log::error!("{}", err.to_string()),
+    Err(err) => {
+      log::error!("{}", err.to_string());
+      std::process::exit(1);
+    }
   };
 
   std::process::exit(0);
@@ -104,6 +108,21 @@ async fn main_loop(script: &str) -> Result<()> {
             }
             Command::Kill => state.proc()?.killer.kill()?,
             Command::Wait => state.proc()?.wait().await?,
+
+            Command::WaitText { text, timeout } => {
+              let vt = &state.proc()?.vt;
+              tokio::time::timeout(timeout, async {
+                loop {
+                  let vt = vt.lock().await;
+                  if vt.screen().contents().contains(text.as_str()) {
+                    break ();
+                  }
+                  tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+              })
+              .await?;
+            }
+
             Command::Sleep(delay) => tokio::time::sleep(delay).await,
             Command::Print(msg) => println!("PRINT: {}", msg),
             Command::DumpPng(path) => {
