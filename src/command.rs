@@ -149,6 +149,8 @@ impl<'inst> CommandParser<'inst> {
         Token::Int(num)
       };
       Ok(tok)
+    } else if ch == '#' {
+      Ok(Token::Eof)
     } else if ch == '\0' {
       Ok(Token::Eof)
     } else {
