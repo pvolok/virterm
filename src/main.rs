@@ -1,5 +1,6 @@
 mod command;
 mod dump_png;
+mod dump_txt;
 mod proc;
 
 use std::ffi::OsString;
@@ -11,6 +12,7 @@ use tokio::io::AsyncBufReadExt;
 
 use crate::command::Command;
 use crate::dump_png::dump_png;
+use crate::dump_txt::dump_txt;
 
 #[tokio::main]
 async fn main() -> () {
@@ -101,6 +103,12 @@ async fn main_loop(script: &str) -> Result<()> {
               let vt = proc.vt.lock().await;
               let screen = vt.screen();
               dump_png(screen, path.as_str())?;
+            }
+            Command::DumpTxt(path) => {
+              let proc = state.proc()?;
+              let vt = proc.vt.lock().await;
+              let screen = vt.screen();
+              dump_txt(screen, path.as_str())?;
             }
           }
         }

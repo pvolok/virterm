@@ -10,6 +10,7 @@ pub enum Command {
   Sleep(Duration),
   Print(String),
   DumpPng(String),
+  DumpTxt(String),
 }
 
 impl Command {
@@ -74,6 +75,13 @@ impl<'inst> CommandParser<'inst> {
             _ => bail!("Expected string"),
           };
           Ok(Some(Command::DumpPng(file)))
+        }
+        "dump_txt" => {
+          let file = match self.next_token()? {
+            Token::String(file) => file,
+            _ => bail!("Expected string"),
+          };
+          Ok(Some(Command::DumpTxt(file)))
         }
         cmd => bail!("Unknown command: {}", cmd),
       },
