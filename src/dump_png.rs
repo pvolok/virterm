@@ -5,6 +5,8 @@ use image::Rgb;
 pub fn dump_png(screen: &vt100::Screen, path: &str) -> Result<()> {
   let px = 43.0;
   let (h, w) = screen.size();
+  let w = w as u32;
+  let h = h as u32;
 
   let fonts = {
     let regular = include_bytes!("fonts/JetBrainsMono-Regular.ttf") as &[u8];
@@ -25,13 +27,10 @@ pub fn dump_png(screen: &vt100::Screen, path: &str) -> Result<()> {
 
   let canon = fonts[0].scaled_glyph('a');
   let canon_b = fonts[0].glyph_bounds(&canon);
-  let ch_w = canon_b.max.x;
-  let ch_h = fonts[0].height();
+  let ch_w = canon_b.max.x.round() as u32;
+  let ch_h = fonts[0].height().round() as u32;
 
-  let mut canvas = image::RgbImage::new(
-    (w as f32 * ch_w).round() as u32,
-    (h as f32 * ch_h).round() as u32,
-  );
+  let mut canvas = image::RgbImage::new(w * ch_w, h * ch_h);
 
   fn vt_color_to_rgb(from: vt100::Color) -> Option<[u8; 3]> {
     let color = match from {
@@ -50,14 +49,14 @@ pub fn dump_png(screen: &vt100::Screen, path: &str) -> Result<()> {
 
   for row in 0..h {
     for col in 0..w {
-      let cell = screen.cell(row, col).unwrap();
+      let cell = screen.cell(row as u16, col as u16).unwrap();
       let fg = vt_color_to_rgb(cell.fgcolor()).unwrap_or(def_fg);
       let bg = vt_color_to_rgb(cell.bgcolor()).unwrap_or(def_bg);
 
-      let x0 = (col as f32 * ch_w).round() as u32;
-      let y0 = (row as f32 * ch_h).round() as u32;
-      for y in y0..(y0 + ch_h as u32) {
-        for x in x0..(x0 + ch_w as u32) {
+      let x0 = col * ch_w;
+      let y0 = row * ch_h;
+      for y in y0..(y0 + ch_h) {
+        for x in x0..(x0 + ch_w) {
           canvas.put_pixel(x, y, Rgb(bg));
         }
       }
@@ -74,20 +73,14 @@ pub fn dump_png(screen: &vt100::Screen, path: &str) -> Result<()> {
 
         if let Some(outline) = outline {
           outline.draw(|dx, dy, c| {
-            let x = (col as f32 * ch_w) + dx as f32;
-            let y = (row as f32 * ch_h) + dy as f32;
+            let x = col * ch_w + dx;
+            let x = x as f32 + outline.px_bounds().min.x;
+            let x = x.round() as u32;
+            let y = row * ch_h + dy;
+            let y = y as f32 + outline.px_bounds().min.y + font.ascent();
+            let y = y.round() as u32;
 
-            let y = y + outline.px_bounds().min.y + font.ascent();
-            let x = x + outline.px_bounds().min.x;
-
-            if x >= 0.0
-              && x < canvas.width() as f32
-              && y >= 0.0
-              && y < canvas.height() as f32
-            {
-              let x = x.round() as u32;
-              let y = y.round() as u32;
-
+            if x >= x0 && x < x0 + ch_w && y >= y0 && y < y0 + ch_h {
               let pixel = canvas.get_pixel(x, y);
               let pixel = pixel.0.map(|x| x as f32);
               let color = fg.map(|x| x as f32);
@@ -99,7 +92,7 @@ pub fn dump_png(screen: &vt100::Screen, path: &str) -> Result<()> {
                 .collect::<Vec<_>>();
               let color = [color[0], color[1], color[2]];
 
-              canvas.put_pixel(x as u32, y as u32, Rgb(color));
+              canvas.put_pixel(x, y, Rgb(color));
             }
           });
         }
