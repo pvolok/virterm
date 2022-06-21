@@ -1,12 +1,16 @@
-use std::{ffi::OsString, sync::Arc};
+use std::{ffi::OsString, io::Write, sync::Arc, time::Duration};
 
 use anyhow::{bail, Result};
+use mlua::UserData;
 use portable_pty::{ChildKiller, MasterPty};
 use tokio::sync::Mutex;
 
 use crate::{
+  dump_png::dump_png,
+  dump_txt::dump_txt,
   encode_term::{encode_key, KeyCodeEncodeModes},
   key::Key,
+  lua_utils::to_lua_err,
 };
 
 pub struct Proc {
@@ -19,6 +23,20 @@ pub struct Proc {
 }
 
 impl Proc {
+  #[cfg(windows)]
+  pub fn shell(shell: &str) -> Result<Self> {
+    let shell_arg = OsString::new();
+    shell_arg.push("\0");
+    shell_arg.push(shell);
+
+    Self::start(vec!["cmd.exe".into(), "/c".into(), shell_arg])
+  }
+
+  #[cfg(not(windows))]
+  pub fn shell(shell: &str) -> Result<Self> {
+    Self::start(vec!["/bin/sh".into(), "-c".into(), shell.into()])
+  }
+
   pub fn start(args: Vec<OsString>) -> Result<Self> {
     let pair =
       portable_pty::native_pty_system().openpty(portable_pty::PtySize {
@@ -98,14 +116,102 @@ impl Proc {
     if let Some(wait) = self.wait.take() {
       match wait.await? {
         Ok(status) if status.success() => {
-          log::info!("WAIT: Process returned ok")
+          log::info!("Process returned ok")
         }
-        Ok(_) => log::info!("WAIT: Process returned error"),
-        Err(err) => log::info!("WAIT: Error: {}", err),
+        Ok(_) => log::info!("Process returned error"),
+        Err(err) => log::info!("wait(): Error: {}", err),
       }
       Ok(())
     } else {
       bail!("Can't wait the process more than once");
     }
+  }
+}
+
+#[derive(Clone)]
+pub struct LuaProc(Arc<tokio::sync::Mutex<Proc>>);
+
+impl LuaProc {
+  pub fn new(proc: Proc) -> Self {
+    LuaProc(Arc::new(tokio::sync::Mutex::new(proc)))
+  }
+}
+
+impl UserData for LuaProc {
+  fn add_fields<'lua, F: mlua::UserDataFields<'lua, Self>>(_fields: &mut F) {}
+
+  fn add_methods<'lua, M: mlua::UserDataMethods<'lua, Self>>(methods: &mut M) {
+    // send_str
+    methods.add_async_method("send_str", async move |_, proc, str: String| {
+      log::info!("send_str(): {}", str);
+      let mut proc = proc.0.lock().await;
+      proc.master.write_all(str.as_bytes()).map_err(to_lua_err)?;
+      Ok(())
+    });
+
+    // send_key()
+    methods.add_async_method("send_key", async move |_, proc, key: String| {
+      log::info!("send_key(): {}", key);
+      let key = Key::parse(key.as_str()).map_err(to_lua_err)?;
+      let mut proc = proc.0.lock().await;
+      proc.send_key(&key).await;
+      Ok(())
+    });
+
+    // kill()
+    methods.add_async_method("kill", async move |_, proc, ()| {
+      log::info!("kill()");
+      proc.0.lock().await.killer.kill().map_err(to_lua_err)
+    });
+
+    // wait()
+    methods.add_async_method("wait", async move |_, proc, ()| {
+      log::info!("wait()");
+      proc.0.lock().await.wait().await.map_err(to_lua_err)
+    });
+
+    // wait_text(text, {timeout})
+    methods.add_async_method(
+      "wait_text",
+      async move |_, proc, (text, opts): (String, Option<mlua::Table>)| {
+        log::info!("wait_text(): {:?} {:?}", text, opts);
+        let timeout = opts
+          .map(|opts| opts.get("timeout"))
+          .transpose()?
+          .unwrap_or(1000);
+
+        let vt = &proc.0.lock().await.vt;
+        let timeout = Duration::from_millis(timeout);
+        tokio::time::timeout(timeout, async {
+          loop {
+            if vt.lock().await.screen().contents().contains(text.as_str()) {
+              break ();
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+          }
+        })
+        .await
+        .map_err(to_lua_err)?;
+        Ok(())
+      },
+    );
+
+    // dump_txt(path)
+    methods.add_async_method("dump_txt", async move |_, proc, path: String| {
+      log::info!("dump_txt()");
+      let proc = proc.0.lock().await;
+      let vt = proc.vt.lock().await;
+      dump_txt(vt.screen(), path.as_str()).map_err(to_lua_err)?;
+      Ok(())
+    });
+
+    // dump_png(path)
+    methods.add_async_method("dump_png", async move |_, proc, path: String| {
+      log::info!("dump_png()");
+      let proc = proc.0.lock().await;
+      let vt = proc.vt.lock().await;
+      dump_png(vt.screen(), path.as_str()).map_err(to_lua_err)?;
+      Ok(())
+    });
   }
 }

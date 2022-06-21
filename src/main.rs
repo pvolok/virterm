@@ -1,21 +1,20 @@
-mod command;
+#![feature(async_closure)]
+
 mod dump_png;
 mod dump_txt;
 mod encode_term;
 mod key;
+mod lua_utils;
 mod proc;
 
-use std::ffi::OsString;
 use std::time::Duration;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::{arg, command};
-use proc::Proc;
-use tokio::io::AsyncBufReadExt;
-
-use crate::command::Command;
-use crate::dump_png::dump_png;
-use crate::dump_txt::dump_txt;
+use lua_utils::to_lua_err;
+use mlua::Lua;
+use proc::{LuaProc, Proc};
+use tokio::io::AsyncReadExt;
 
 #[tokio::main]
 async fn main() -> () {
@@ -42,102 +41,31 @@ async fn run_cli() -> anyhow::Result<()> {
 
   let script = matches.value_of("script").unwrap();
 
-  main_loop(script).await?;
+  run_lua(script).await?;
 
   Ok(())
 }
 
-struct State {
-  proc: Option<Proc>,
-}
+async fn run_lua(script: &str) -> Result<()> {
+  let lua = Lua::new();
 
-impl State {
-  fn new() -> Self {
-    State { proc: None }
-  }
+  let start = lua.create_function(|_, cmd: String| {
+    let proc = Proc::shell(cmd.as_str()).map_err(to_lua_err)?;
+    let proc = LuaProc::new(proc);
+    Ok(proc)
+  })?;
+  lua.globals().set("start", start)?;
 
-  fn proc(&mut self) -> Result<&mut Proc> {
-    if let Some(proc) = &mut self.proc {
-      Ok(proc)
-    } else {
-      bail!("Process has not been started");
-    }
-  }
-
-  fn start_prog(&mut self, args: Vec<String>) -> Result<()> {
-    if let Some(_) = self.proc {
-      bail!("Process was already started");
-    }
-    let args = args
-      .into_iter()
-      .map(|arg| OsString::from(arg))
-      .collect::<Vec<_>>();
-    let proc = Proc::start(args)?;
-    self.proc = Some(proc);
+  let sleep = lua.create_async_function(async move |_, millis: u64| {
+    tokio::time::sleep(Duration::from_millis(millis)).await;
     Ok(())
-  }
-}
+  })?;
+  lua.globals().set("sleep", sleep)?;
 
-async fn main_loop(script: &str) -> Result<()> {
-  let mut state = State::new();
+  let mut script = tokio::fs::File::open(script).await?;
+  let mut src = String::new();
+  script.read_to_string(&mut src).await?;
+  lua.load(src.as_str()).exec_async().await?;
 
-  let script = tokio::fs::File::open(script).await?;
-  let mut reader = tokio::io::BufReader::new(script);
-  let mut buf = String::new();
-  loop {
-    buf.clear();
-    match reader.read_line(&mut buf).await {
-      Ok(len) => {
-        if len == 0 {
-          break;
-        }
-        let cmd = Command::parse(buf.as_str())?;
-        if let Some(cmd) = cmd {
-          log::info!("CMD: {:?}", cmd);
-          match cmd {
-            Command::Start(args) => state.start_prog(args)?,
-            Command::SendKeys(keys) => {
-              let proc = state.proc()?;
-              for key in keys {
-                proc.send_key(&key).await;
-              }
-            }
-            Command::Kill => state.proc()?.killer.kill()?,
-            Command::Wait => state.proc()?.wait().await?,
-
-            Command::WaitText { text, timeout } => {
-              let vt = &state.proc()?.vt;
-              tokio::time::timeout(timeout, async {
-                loop {
-                  let vt = vt.lock().await;
-                  if vt.screen().contents().contains(text.as_str()) {
-                    break ();
-                  }
-                  tokio::time::sleep(Duration::from_millis(50)).await;
-                }
-              })
-              .await?;
-            }
-
-            Command::Sleep(delay) => tokio::time::sleep(delay).await,
-            Command::Print(msg) => println!("PRINT: {}", msg),
-            Command::DumpPng(path) => {
-              let proc = state.proc()?;
-              let vt = proc.vt.lock().await;
-              let screen = vt.screen();
-              dump_png(screen, path.as_str())?;
-            }
-            Command::DumpTxt(path) => {
-              let proc = state.proc()?;
-              let vt = proc.vt.lock().await;
-              let screen = vt.screen();
-              dump_txt(screen, path.as_str())?;
-            }
-          }
-        }
-      }
-      Err(err) => return Err(anyhow::anyhow!(err)),
-    }
-  }
   Ok(())
 }

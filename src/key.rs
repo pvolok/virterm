@@ -49,14 +49,6 @@ static SPECIAL_CHARS: phf::Map<char, &str> = phf::phf_map! {
 pub struct Key(KeyEvent);
 
 impl Key {
-  pub fn new(code: KeyCode, mods: KeyModifiers) -> Key {
-    Key::from(KeyEvent::new(code, mods))
-  }
-
-  pub fn from_char(ch: char) -> Key {
-    Key::new(KeyCode::Char(ch), KeyModifiers::NONE)
-  }
-
   pub fn parse(text: &str) -> anyhow::Result<Key> {
     KeyParser::parse(text)
   }
