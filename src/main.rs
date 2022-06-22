@@ -12,8 +12,8 @@ use std::time::Duration;
 use anyhow::Result;
 use clap::{arg, command};
 use lua_utils::to_lua_err;
-use mlua::Lua;
-use proc::{LuaProc, Proc};
+use mlua::{Lua, LuaSerdeExt};
+use proc::{LuaProc, Proc, ProcConfig};
 use tokio::io::AsyncReadExt;
 
 #[tokio::main]
@@ -49,11 +49,14 @@ async fn run_cli() -> anyhow::Result<()> {
 async fn run_lua(script: &str) -> Result<()> {
   let lua = Lua::new();
 
-  let start = lua.create_function(|_, cmd: String| {
-    let proc = Proc::shell(cmd.as_str()).map_err(to_lua_err)?;
-    let proc = LuaProc::new(proc);
-    Ok(proc)
-  })?;
+  let start =
+    lua.create_function(|lua, (cmd, cfg_val): (String, mlua::Value)| {
+      let cfg: Option<ProcConfig> = lua.from_value(cfg_val)?;
+      let cfg = cfg.unwrap_or_default();
+      let proc = Proc::shell(cmd.as_str(), &cfg).map_err(to_lua_err)?;
+      let proc = LuaProc::new(proc);
+      Ok(proc)
+    })?;
   lua.globals().set("start", start)?;
 
   let sleep = lua.create_async_function(async move |_, millis: u64| {

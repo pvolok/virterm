@@ -288,6 +288,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "erased-serde"
+version = "0.3.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81d013529d5574a60caeda29e179e695125448e5de52e3874f7b4c1d7360e18e"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "exr"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -629,6 +638,7 @@ checksum = "d75eb178f8a9d6654ef31f094fb3da6d1e81e714f27007e92a3094ddd6587aa2"
 dependencies = [
  "bstr",
  "cc",
+ "erased-serde",
  "futures-core",
  "futures-task",
  "futures-util",
@@ -638,6 +648,7 @@ dependencies = [
  "once_cell",
  "pkg-config",
  "rustc-hash",
+ "serde",
 ]
 
 [[package]]

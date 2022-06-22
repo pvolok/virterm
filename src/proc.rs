@@ -1,8 +1,9 @@
 use std::{ffi::OsString, io::Write, sync::Arc, time::Duration};
 
 use anyhow::{bail, Result};
-use mlua::UserData;
-use portable_pty::{ChildKiller, MasterPty};
+use mlua::{LuaSerdeExt, UserData, Value};
+use portable_pty::{ChildKiller, MasterPty, PtySize};
+use serde::Deserialize;
 use tokio::sync::Mutex;
 
 use crate::{
@@ -14,6 +15,7 @@ use crate::{
 };
 
 pub struct Proc {
+  pub pid: i32,
   pub master: Box<dyn MasterPty + Send>,
   pub killer: Box<dyn ChildKiller + Send + Sync>,
   pub wait:
@@ -22,32 +24,63 @@ pub struct Proc {
   pub vt: Arc<Mutex<vt100::Parser>>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ProcConfig {
+  #[serde(default = "default_width")]
+  pub width: u16,
+  #[serde(default = "default_height")]
+  pub height: u16,
+}
+
+impl Default for ProcConfig {
+  fn default() -> Self {
+    Self {
+      width: default_width(),
+      height: default_height(),
+    }
+  }
+}
+
+fn default_width() -> u16 {
+  80
+}
+fn default_height() -> u16 {
+  30
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResizeConfig {
+  pub width: u16,
+  pub height: u16,
+}
+
 impl Proc {
   #[cfg(windows)]
-  pub fn shell(shell: &str) -> Result<Self> {
+  pub fn shell(shell: &str, cfg: &ProcConfig) -> Result<Self> {
     let shell_arg = OsString::new();
     shell_arg.push("\0");
     shell_arg.push(shell);
 
-    Self::start(vec!["cmd.exe".into(), "/c".into(), shell_arg])
+    Self::start(vec!["cmd.exe".into(), "/c".into(), shell_arg], cfg)
   }
 
   #[cfg(not(windows))]
-  pub fn shell(shell: &str) -> Result<Self> {
-    Self::start(vec!["/bin/sh".into(), "-c".into(), shell.into()])
+  pub fn shell(shell: &str, cfg: &ProcConfig) -> Result<Self> {
+    Self::start(vec!["/bin/sh".into(), "-c".into(), shell.into()], cfg)
   }
 
-  pub fn start(args: Vec<OsString>) -> Result<Self> {
+  pub fn start(args: Vec<OsString>, cfg: &ProcConfig) -> Result<Self> {
     let pair =
       portable_pty::native_pty_system().openpty(portable_pty::PtySize {
-        rows: 30,
-        cols: 80,
+        rows: cfg.height,
+        cols: cfg.width,
         pixel_width: 0,
         pixel_height: 0,
       })?;
     let mut cmd = portable_pty::CommandBuilder::from_argv(args);
     cmd.cwd(std::env::current_dir()?.as_os_str());
     let mut child = pair.slave.spawn_command(cmd)?;
+    let pid = child.process_id().map(|i| i as i32).unwrap_or(-1);
     let killer = child.clone_killer();
 
     let (wait_send, wait) = tokio::sync::oneshot::channel();
@@ -56,7 +89,7 @@ impl Proc {
       let _r = wait_send.send(result);
     });
 
-    let vt = vt100::Parser::new(30, 80, 100);
+    let vt = vt100::Parser::new(cfg.height, cfg.width, 100);
     let vt = Arc::new(Mutex::new(vt));
 
     let mut reader = pair.master.try_clone_reader().unwrap();
@@ -81,6 +114,7 @@ impl Proc {
     }
 
     let proc = Proc {
+      pid,
       master: pair.master,
       killer,
       wait: Some(wait),
@@ -112,6 +146,10 @@ impl Proc {
     }
   }
 
+  pub fn send_signal(&mut self, sig: libc::c_int) {
+    unsafe { libc::kill(self.pid, sig) };
+  }
+
   pub async fn wait(&mut self) -> Result<()> {
     if let Some(wait) = self.wait.take() {
       match wait.await? {
@@ -125,6 +163,17 @@ impl Proc {
     } else {
       bail!("Can't wait the process more than once");
     }
+  }
+
+  pub async fn resize(&mut self, opts: ResizeConfig) -> Result<()> {
+    self.vt.lock().await.set_size(opts.height, opts.width);
+    self.master.resize(PtySize {
+      cols: opts.width,
+      rows: opts.height,
+      pixel_width: 0,
+      pixel_height: 0,
+    })?;
+    Ok(())
   }
 }
 
@@ -141,6 +190,12 @@ impl UserData for LuaProc {
   fn add_fields<'lua, F: mlua::UserDataFields<'lua, Self>>(_fields: &mut F) {}
 
   fn add_methods<'lua, M: mlua::UserDataMethods<'lua, Self>>(methods: &mut M) {
+    // pid()
+    methods.add_async_method("pid", async move |_, proc, ()| {
+      let pid = proc.0.lock().await.pid;
+      Ok(pid)
+    });
+
     // send_str
     methods.add_async_method("send_str", async move |_, proc, str: String| {
       log::info!("send_str(): {}", str);
@@ -158,10 +213,39 @@ impl UserData for LuaProc {
       Ok(())
     });
 
+    // send_signal
+    methods.add_async_method(
+      "send_signal",
+      async move |_, proc, sig: Value| {
+        let (sig, str) = match sig {
+          Value::Integer(sig) => (sig as i32, sig.to_string()),
+          Value::String(sig) => {
+            let str = sig.to_str()?;
+            let sig = signal_from_string(str).map_err(to_lua_err)?;
+            (sig, str.to_string())
+          }
+          _ => {
+            return Err(mlua::Error::external(
+              "proc.kill() expects a string or an integer",
+            ))
+          }
+        };
+        log::info!("send_signal(): {:?}", str);
+        proc.0.lock().await.send_signal(sig);
+        Ok(())
+      },
+    );
+
     // kill()
     methods.add_async_method("kill", async move |_, proc, ()| {
       log::info!("kill()");
       proc.0.lock().await.killer.kill().map_err(to_lua_err)
+    });
+
+    // resize
+    methods.add_async_method("resize", async move |lua, proc, opts: Value| {
+      let opts: ResizeConfig = lua.from_value(opts).map_err(to_lua_err)?;
+      proc.0.lock().await.resize(opts).await.map_err(to_lua_err)
     });
 
     // wait()
@@ -214,4 +298,23 @@ impl UserData for LuaProc {
       Ok(())
     });
   }
+}
+
+fn signal_from_string(sig: &str) -> Result<libc::c_int> {
+  let sig = match sig {
+    "SIGHUP" => 1,
+    "SIGINT" => 2,
+    "SIGQUIT" => 3,
+    "SIGILL" => 4,
+    "SIGABRT" => 6,
+    "SIGEMT" => 7,
+    "SIGFPE" => 8,
+    "SIGKILL" => 9,
+    "SIGSEGV" => 11,
+    "SIGPIPE" => 13,
+    "SIGALRM" => 14,
+    "SIGTERM" => 15,
+    _ => bail!("Unknown signal: {}", sig),
+  };
+  Ok(sig)
 }
