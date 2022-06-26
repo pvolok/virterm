@@ -17,6 +17,33 @@ Features:
 
 ## Usage
 
+Run `virterm my-script.lua`
+
+Example lua script:
+
+```lua
+local proc = vt.start("nvim", { width = 120, height = 20 })
+
+print("Pid: " .. proc:pid())
+
+# Wait until the terminal screen contains "[No Name]" text.
+proc:wait_text("[No Name]")
+
+proc:send_str("iHello")
+proc:send_key("<Enter>")
+proc:send_str("World")
+
+proc:wait_text("World")
+
+proc:resize({ width = 60, height = 30 })
+vt.sleep(300)
+
+proc:dump_png("screenshot.png")
+
+proc:send_signal("SIGTERM")
+proc:wait()
+```
+
 ### Lua api
 
 #### `vt.start(command [, params]) -> proc`
@@ -76,8 +103,8 @@ Wait until the process exits.
 
 #### `proc:wait_text(text:string [, opts])`
 
-Wait until the terminal contans provided text. The terminal is checked every 50
-milliseconds. When _timeout_ expires, virterm exits with non-zero exit code.
+Wait until the terminal contains provided text. The terminal is checked every
+50 milliseconds. When _timeout_ expires, virterm exits with non-zero exit code.
 
 - **opts**
   - **timeout** - _Optional_. Timeout in milliseconds. Default: `1000`.
