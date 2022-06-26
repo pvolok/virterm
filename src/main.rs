@@ -49,6 +49,8 @@ async fn run_cli() -> anyhow::Result<()> {
 async fn run_lua(script: &str) -> Result<()> {
   let lua = Lua::new();
 
+  let vt = lua.create_table()?;
+
   let start =
     lua.create_function(|lua, (cmd, cfg_val): (String, mlua::Value)| {
       let cfg: Option<ProcConfig> = lua.from_value(cfg_val)?;
@@ -57,13 +59,15 @@ async fn run_lua(script: &str) -> Result<()> {
       let proc = LuaProc::new(proc);
       Ok(proc)
     })?;
-  lua.globals().set("start", start)?;
+  vt.set("start", start)?;
 
   let sleep = lua.create_async_function(async move |_, millis: u64| {
     tokio::time::sleep(Duration::from_millis(millis)).await;
     Ok(())
   })?;
-  lua.globals().set("sleep", sleep)?;
+  vt.set("sleep", sleep)?;
+
+  lua.globals().set("vt", vt)?;
 
   let mut script = tokio::fs::File::open(script).await?;
   let mut src = String::new();

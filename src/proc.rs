@@ -178,11 +178,18 @@ impl Proc {
 }
 
 #[derive(Clone)]
-pub struct LuaProc(Arc<tokio::sync::Mutex<Proc>>);
+pub struct LuaProc(Arc<std::sync::Mutex<Proc>>);
 
 impl LuaProc {
   pub fn new(proc: Proc) -> Self {
-    LuaProc(Arc::new(tokio::sync::Mutex::new(proc)))
+    LuaProc(Arc::new(std::sync::Mutex::new(proc)))
+  }
+
+  fn lock(&self) -> Result<std::sync::MutexGuard<Proc>, mlua::Error> {
+    self
+      .0
+      .lock()
+      .map_err(|e| mlua::Error::external(e.to_string()))
   }
 }
 
@@ -191,15 +198,15 @@ impl UserData for LuaProc {
 
   fn add_methods<'lua, M: mlua::UserDataMethods<'lua, Self>>(methods: &mut M) {
     // pid()
-    methods.add_async_method("pid", async move |_, proc, ()| {
-      let pid = proc.0.lock().await.pid;
+    methods.add_method("pid", |_, proc, ()| {
+      let pid = proc.lock()?.pid;
       Ok(pid)
     });
 
     // send_str
-    methods.add_async_method("send_str", async move |_, proc, str: String| {
+    methods.add_method("send_str", |_, proc, str: String| {
       log::info!("send_str(): {}", str);
-      let mut proc = proc.0.lock().await;
+      let mut proc = proc.lock()?;
       proc.master.write_all(str.as_bytes()).map_err(to_lua_err)?;
       Ok(())
     });
@@ -208,50 +215,47 @@ impl UserData for LuaProc {
     methods.add_async_method("send_key", async move |_, proc, key: String| {
       log::info!("send_key(): {}", key);
       let key = Key::parse(key.as_str()).map_err(to_lua_err)?;
-      let mut proc = proc.0.lock().await;
+      let mut proc = proc.lock()?;
       proc.send_key(&key).await;
       Ok(())
     });
 
     // send_signal
-    methods.add_async_method(
-      "send_signal",
-      async move |_, proc, sig: Value| {
-        let (sig, str) = match sig {
-          Value::Integer(sig) => (sig as i32, sig.to_string()),
-          Value::String(sig) => {
-            let str = sig.to_str()?;
-            let sig = signal_from_string(str).map_err(to_lua_err)?;
-            (sig, str.to_string())
-          }
-          _ => {
-            return Err(mlua::Error::external(
-              "proc.kill() expects a string or an integer",
-            ))
-          }
-        };
-        log::info!("send_signal(): {:?}", str);
-        proc.0.lock().await.send_signal(sig);
-        Ok(())
-      },
-    );
+    methods.add_method("send_signal", |_, proc, sig: Value| {
+      let (sig, str) = match sig {
+        Value::Integer(sig) => (sig as i32, sig.to_string()),
+        Value::String(sig) => {
+          let str = sig.to_str()?;
+          let sig = signal_from_string(str).map_err(to_lua_err)?;
+          (sig, str.to_string())
+        }
+        _ => {
+          return Err(mlua::Error::external(
+            "proc.kill() expects a string or an integer",
+          ))
+        }
+      };
+      log::info!("send_signal(): {:?}", str);
+      proc.lock()?.send_signal(sig);
+      Ok(())
+    });
 
     // kill()
-    methods.add_async_method("kill", async move |_, proc, ()| {
+    methods.add_method("kill", |_, proc, ()| {
       log::info!("kill()");
-      proc.0.lock().await.killer.kill().map_err(to_lua_err)
+      proc.lock()?.killer.kill().map_err(to_lua_err)
     });
 
     // resize
     methods.add_async_method("resize", async move |lua, proc, opts: Value| {
       let opts: ResizeConfig = lua.from_value(opts).map_err(to_lua_err)?;
-      proc.0.lock().await.resize(opts).await.map_err(to_lua_err)
+      proc.lock()?.resize(opts).await.map_err(to_lua_err)
     });
 
     // wait()
     methods.add_async_method("wait", async move |_, proc, ()| {
       log::info!("wait()");
-      proc.0.lock().await.wait().await.map_err(to_lua_err)
+      proc.lock()?.wait().await.map_err(to_lua_err)
     });
 
     // wait_text(text, {timeout})
@@ -264,7 +268,7 @@ impl UserData for LuaProc {
           .transpose()?
           .unwrap_or(1000);
 
-        let vt = &proc.0.lock().await.vt;
+        let vt = &proc.lock()?.vt;
         let timeout = Duration::from_millis(timeout);
         tokio::time::timeout(timeout, async {
           loop {
@@ -283,7 +287,7 @@ impl UserData for LuaProc {
     // dump_txt(path)
     methods.add_async_method("dump_txt", async move |_, proc, path: String| {
       log::info!("dump_txt()");
-      let proc = proc.0.lock().await;
+      let proc = proc.lock()?;
       let vt = proc.vt.lock().await;
       dump_txt(vt.screen(), path.as_str()).map_err(to_lua_err)?;
       Ok(())
@@ -292,7 +296,7 @@ impl UserData for LuaProc {
     // dump_png(path)
     methods.add_async_method("dump_png", async move |_, proc, path: String| {
       log::info!("dump_png()");
-      let proc = proc.0.lock().await;
+      let proc = proc.lock()?;
       let vt = proc.vt.lock().await;
       dump_png(vt.screen(), path.as_str()).map_err(to_lua_err)?;
       Ok(())
