@@ -56,8 +56,7 @@ pub struct ResizeConfig {
 impl Proc {
   #[cfg(windows)]
   pub fn shell(shell: &str, cfg: &ProcConfig) -> Result<Self> {
-    let shell_arg = OsString::new();
-    shell_arg.push("\0");
+    let mut shell_arg = OsString::new();
     shell_arg.push(shell);
 
     Self::start(vec!["cmd.exe".into(), "/c".into(), shell_arg], cfg)
@@ -145,6 +144,12 @@ impl Proc {
     }
   }
 
+  #[cfg(windows)]
+  pub fn send_signal(&mut self, _sig: libc::c_int) {
+    ()
+  }
+
+  #[cfg(not(windows))]
   pub fn send_signal(&mut self, sig: libc::c_int) {
     unsafe { libc::kill(self.pid, sig) };
   }
