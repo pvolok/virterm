@@ -29,6 +29,8 @@ print("Pid: " .. proc:pid())
 # Wait until the terminal screen contains "[No Name]" text.
 proc:wait_text("[No Name]")
 
+print(proc:contents())
+
 proc:send_str("iHello")
 proc:send_key("<Enter>")
 proc:send_str("World")
@@ -62,6 +64,10 @@ Sleeps for `duration_ms` milliseconds.
 #### `proc:pid() -> int`
 
 Returns process' pid.
+
+#### `proc:contents() -> string`
+
+Returns terminal screen content as a string.
 
 #### `proc:send_str(str: string)`
 

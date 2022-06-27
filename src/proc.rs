@@ -4,7 +4,6 @@ use anyhow::{bail, Result};
 use mlua::{LuaSerdeExt, UserData, Value};
 use portable_pty::{ChildKiller, MasterPty, PtySize};
 use serde::Deserialize;
-use tokio::sync::Mutex;
 
 use crate::{
   dump_png::dump_png,
@@ -21,7 +20,7 @@ pub struct Proc {
   pub wait:
     Option<tokio::sync::oneshot::Receiver<Result<portable_pty::ExitStatus>>>,
 
-  pub vt: Arc<Mutex<vt100::Parser>>,
+  pub vt: Arc<std::sync::Mutex<vt100::Parser>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -90,7 +89,7 @@ impl Proc {
     });
 
     let vt = vt100::Parser::new(cfg.height, cfg.width, 100);
-    let vt = Arc::new(Mutex::new(vt));
+    let vt = Arc::new(std::sync::Mutex::new(vt));
 
     let mut reader = pair.master.try_clone_reader().unwrap();
 
@@ -102,7 +101,7 @@ impl Proc {
           match reader.read(&mut buf[..]) {
             Ok(count) => {
               if count > 0 {
-                vt.clone().blocking_lock().process(&buf[..count]);
+                vt.clone().lock().unwrap().process(&buf[..count]);
               } else {
                 std::thread::sleep(std::time::Duration::from_millis(10));
               }
@@ -127,7 +126,7 @@ impl Proc {
 
   pub async fn send_key(&mut self, key: &Key) {
     let application_cursor_keys =
-      self.vt.lock().await.screen().application_cursor();
+      self.lock_vt().unwrap().screen().application_cursor();
     let encoder = encode_key(
       key,
       KeyCodeEncodeModes {
@@ -166,7 +165,7 @@ impl Proc {
   }
 
   pub async fn resize(&mut self, opts: ResizeConfig) -> Result<()> {
-    self.vt.lock().await.set_size(opts.height, opts.width);
+    self.lock_vt()?.set_size(opts.height, opts.width);
     self.master.resize(PtySize {
       cols: opts.width,
       rows: opts.height,
@@ -174,6 +173,15 @@ impl Proc {
       pixel_height: 0,
     })?;
     Ok(())
+  }
+
+  fn lock_vt(
+    &self,
+  ) -> Result<std::sync::MutexGuard<vt100::Parser>, mlua::Error> {
+    self
+      .vt
+      .lock()
+      .map_err(|e| mlua::Error::external(e.to_string()))
   }
 }
 
@@ -201,6 +209,12 @@ impl UserData for LuaProc {
     methods.add_method("pid", |_, proc, ()| {
       let pid = proc.lock()?.pid;
       Ok(pid)
+    });
+
+    // contents()
+    methods.add_method("contents", |_, proc, ()| {
+      let contents = proc.lock()?.lock_vt()?.screen().contents();
+      Ok(contents)
     });
 
     // send_str
@@ -268,11 +282,17 @@ impl UserData for LuaProc {
           .transpose()?
           .unwrap_or(1000);
 
-        let vt = &proc.lock()?.vt;
+        let proc = &proc.lock()?;
         let timeout = Duration::from_millis(timeout);
         tokio::time::timeout(timeout, async {
           loop {
-            if vt.lock().await.screen().contents().contains(text.as_str()) {
+            if proc
+              .lock_vt()
+              .unwrap()
+              .screen()
+              .contents()
+              .contains(text.as_str())
+            {
               break ();
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -288,7 +308,7 @@ impl UserData for LuaProc {
     methods.add_async_method("dump_txt", async move |_, proc, path: String| {
       log::info!("dump_txt()");
       let proc = proc.lock()?;
-      let vt = proc.vt.lock().await;
+      let vt = proc.lock_vt()?;
       dump_txt(vt.screen(), path.as_str()).map_err(to_lua_err)?;
       Ok(())
     });
@@ -297,7 +317,7 @@ impl UserData for LuaProc {
     methods.add_async_method("dump_png", async move |_, proc, path: String| {
       log::info!("dump_png()");
       let proc = proc.lock()?;
-      let vt = proc.vt.lock().await;
+      let vt = proc.lock_vt()?;
       dump_png(vt.screen(), path.as_str()).map_err(to_lua_err)?;
       Ok(())
     });
