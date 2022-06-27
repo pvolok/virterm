@@ -26,7 +26,7 @@ local proc = vt.start("nvim", { width = 120, height = 20 })
 
 print("Pid: " .. proc:pid())
 
-# Wait until the terminal screen contains "[No Name]" text.
+-- Wait until the terminal screen contains "[No Name]" text.
 proc:wait_text("[No Name]")
 
 print(proc:contents())
