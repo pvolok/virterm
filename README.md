@@ -12,6 +12,7 @@ Features:
 - make text screenshot
 - wait until desired text appears in terminal
 - send keys
+- send mouse events
 - send signal (unix)
 - resize running terminal
 
@@ -87,6 +88,23 @@ Key examples:
 - `<Esc>` Escape key
 - `<BS>` Backspace
 - `<Left>`/`<Right>`/`<Up>`/`<Down>`
+
+#### `proc:click(opts: table)`
+
+Send mouse click event.
+
+- **x** - column (top line is 0).
+- **y** - row (left row is 0).
+- **button** = _Optional_. Mouse button. Possible values: `"left"`, `"right"`,
+  `"middle"`. Default is `"left"`.
+
+#### `proc:scroll(opts: table)`
+
+Send mouse scroll event.
+
+- **x** - column (top line is 0).
+- **y** - row (left row is 0).
+- **dir** = Scroll direction. Possible values: `"up"`, `"down"`.
 
 #### `proc:send_signal(signal: int | string)`
 
