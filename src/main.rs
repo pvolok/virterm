@@ -5,6 +5,7 @@ mod dump_txt;
 mod encode_term;
 mod key;
 mod lua_utils;
+mod mouse;
 mod proc;
 
 use std::time::Duration;

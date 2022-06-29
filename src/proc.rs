@@ -1,6 +1,7 @@
 use std::{ffi::OsString, io::Write, sync::Arc, time::Duration};
 
 use anyhow::{bail, Result};
+use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use mlua::{LuaSerdeExt, UserData, Value};
 use portable_pty::{ChildKiller, MasterPty, PtySize};
 use serde::Deserialize;
@@ -11,6 +12,7 @@ use crate::{
   encode_term::{encode_key, KeyCodeEncodeModes},
   key::Key,
   lua_utils::to_lua_err,
+  mouse::MouseAction,
 };
 
 pub struct Proc {
@@ -51,6 +53,43 @@ fn default_height() -> u16 {
 pub struct ResizeConfig {
   pub width: u16,
   pub height: u16,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ClickParams {
+  x: u16,
+  y: u16,
+  #[serde(default = "default_click_button")]
+  button: ClickButton,
+}
+
+#[derive(Debug, Deserialize)]
+pub enum ClickButton {
+  #[serde(rename = "left")]
+  Left,
+  #[serde(rename = "right")]
+  Right,
+  #[serde(rename = "middle")]
+  Middle,
+}
+
+fn default_click_button() -> ClickButton {
+  ClickButton::Left
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ScrollParams {
+  x: u16,
+  y: u16,
+  dir: ScrollDir,
+}
+
+#[derive(Debug, Deserialize)]
+pub enum ScrollDir {
+  #[serde(rename = "up")]
+  Up,
+  #[serde(rename = "down")]
+  Down,
 }
 
 impl Proc {
@@ -123,7 +162,7 @@ impl Proc {
     Ok(proc)
   }
 
-  pub async fn send_key(&mut self, key: &Key) {
+  pub fn send_key(&mut self, key: &Key) {
     let application_cursor_keys =
       self.lock_vt().unwrap().screen().application_cursor();
     let encoder = encode_key(
@@ -142,6 +181,11 @@ impl Proc {
         log::warn!("Failed to encode key: {}", key.to_string());
       }
     }
+  }
+
+  pub fn send_mouse(&mut self, mouse: &MouseAction) -> Result<()> {
+    self.master.write_all(mouse.encode()?.as_bytes())?;
+    Ok(())
   }
 
   #[cfg(windows)]
@@ -235,7 +279,42 @@ impl UserData for LuaProc {
       log::info!("send_key(): {}", key);
       let key = Key::parse(key.as_str()).map_err(to_lua_err)?;
       let mut proc = proc.lock()?;
-      proc.send_key(&key).await;
+      proc.send_key(&key);
+      Ok(())
+    });
+
+    // click()
+    methods.add_method("click", |lua, proc, opts: Value| {
+      let opts: ClickParams = lua.from_value(opts).map_err(to_lua_err)?;
+      let btn = match opts.button {
+        ClickButton::Left => MouseButton::Left,
+        ClickButton::Right => MouseButton::Right,
+        ClickButton::Middle => MouseButton::Middle,
+      };
+      let action = MouseAction(MouseEvent {
+        kind: MouseEventKind::Down(btn),
+        row: opts.y,
+        column: opts.x,
+        modifiers: KeyModifiers::NONE,
+      });
+      proc.lock()?.send_mouse(&action).map_err(to_lua_err)?;
+      Ok(())
+    });
+
+    // scroll()
+    methods.add_method("scroll", |lua, proc, opts: Value| {
+      let opts: ScrollParams = lua.from_value(opts).map_err(to_lua_err)?;
+      let kind = match opts.dir {
+        ScrollDir::Up => MouseEventKind::ScrollUp,
+        ScrollDir::Down => MouseEventKind::ScrollDown,
+      };
+      let action = MouseAction(MouseEvent {
+        kind,
+        row: opts.y,
+        column: opts.x,
+        modifiers: KeyModifiers::NONE,
+      });
+      proc.lock()?.send_mouse(&action).map_err(to_lua_err)?;
       Ok(())
     });
 
