@@ -16,6 +16,33 @@ Features:
 - send signal (unix)
 - resize running terminal
 
+## Table of contents
+
+<!--ts-->
+
+- [Usage](#usage)
+  - [Lua api](#lua-api)
+    - [vt.start(command [, params]) -&gt; proc](#vtstartcommand--params---proc)
+    - [vt.sleep(duration_ms: int)](#vtsleepduration_ms-int)
+    - [proc:pid() -&gt; int](#procpid---int)
+    - [proc:contents() -&gt; string](#proccontents---string)
+    - [proc:send_str(str: string)](#procsend_strstr-string)
+    - [proc:send_key(key: string)](#procsend_keykey-string)
+    - [proc:click(opts: table)](#procclickopts-table)
+    - [proc:scroll(opts: table)](#procscrollopts-table)
+    - [proc:send_signal(signal: int | string)](#procsend_signalsignal-int--string)
+    - [proc:kill()](#prockill)
+    - [proc:resize(size: table)](#procresizesize-table)
+    - [proc:wait()](#procwait)
+    - [proc:wait_text(text:string [, opts])](#procwait_texttextstring--opts)
+    - [proc:dump_txt(path: string)](#procdump_txtpath-string)
+    - [proc:dump_png(path: string)](#procdump_pngpath-string)
+
+<!-- Created by https://github.com/ekalinin/github-markdown-toc -->
+<!-- Added by: pvolok, at: Wed Jun 29 23:48:11 +07 2022 -->
+
+<!--te-->
+
 ## Usage
 
 Run `virterm my-script.lua`
