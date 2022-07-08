@@ -1,4 +1,6 @@
-use std::{ffi::OsString, io::Write, sync::Arc, time::Duration};
+use std::{
+  collections::HashMap, ffi::OsString, io::Write, sync::Arc, time::Duration,
+};
 
 use anyhow::{bail, Result};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -31,6 +33,9 @@ pub struct ProcConfig {
   pub width: u16,
   #[serde(default = "default_height")]
   pub height: u16,
+  pub cwd: Option<String>,
+  pub env: Option<HashMap<String, Option<String>>>,
+  pub clear_env: Option<bool>,
 }
 
 impl Default for ProcConfig {
@@ -38,6 +43,9 @@ impl Default for ProcConfig {
     Self {
       width: default_width(),
       height: default_height(),
+      cwd: None,
+      env: None,
+      clear_env: None,
     }
   }
 }
@@ -107,6 +115,26 @@ impl Proc {
   }
 
   pub fn start(args: Vec<OsString>, cfg: &ProcConfig) -> Result<Self> {
+    let mut cmd = portable_pty::CommandBuilder::from_argv(args);
+    if let Some(cwd) = &cfg.cwd {
+      cmd.cwd(cwd);
+    } else {
+      cmd.cwd(std::env::current_dir()?.as_os_str());
+    }
+    match cfg.clear_env {
+      Some(true) => cmd.env_clear(),
+      _ => (),
+    }
+    if let Some(env) = &cfg.env {
+      for (k, v) in env {
+        if let Some(v) = v {
+          cmd.env(k, v);
+        } else {
+          cmd.env_remove(k);
+        }
+      }
+    }
+
     let pair =
       portable_pty::native_pty_system().openpty(portable_pty::PtySize {
         rows: cfg.height,
@@ -114,8 +142,6 @@ impl Proc {
         pixel_width: 0,
         pixel_height: 0,
       })?;
-    let mut cmd = portable_pty::CommandBuilder::from_argv(args);
-    cmd.cwd(std::env::current_dir()?.as_os_str());
     let mut child = pair.slave.spawn_command(cmd)?;
     let pid = child.process_id().map(|i| i as i32).unwrap_or(-1);
     let killer = child.clone_killer();
