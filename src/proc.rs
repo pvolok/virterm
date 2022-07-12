@@ -292,6 +292,26 @@ impl UserData for LuaProc {
       Ok(contents)
     });
 
+    // contents_hex()
+    methods.add_method("contents_hex", |_, proc, ()| {
+      let contents = proc.lock()?.lock_vt()?.screen().contents();
+      let mut buf = String::new();
+      for ch in contents.chars() {
+        if ch == '\n' || ch == '\r' {
+          buf.push(ch);
+        } else {
+          let num = ch as u32;
+          let s = if num <= 255 {
+            format!(" {:02x}", num)
+          } else {
+            format!(" {:x}", num)
+          };
+          buf.push_str(s.as_str());
+        }
+      }
+      Ok(buf)
+    });
+
     // send_str
     methods.add_method("send_str", |_, proc, str: String| {
       log::info!("send_str(): {}", str);
