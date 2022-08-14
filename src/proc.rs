@@ -1,6 +1,4 @@
-use std::{
-  collections::HashMap, ffi::OsString, io::Write, sync::Arc, time::Duration,
-};
+use std::{collections::HashMap, io::Write, sync::Arc, time::Duration};
 
 use anyhow::{bail, Result};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -101,21 +99,14 @@ pub enum ScrollDir {
 }
 
 impl Proc {
-  #[cfg(windows)]
   pub fn shell(shell: &str, cfg: &ProcConfig) -> Result<Self> {
-    let mut shell_arg = OsString::new();
-    shell_arg.push(shell);
-
-    Self::start(vec!["cmd.exe".into(), "/c".into(), shell_arg], cfg)
+    Self::start(portable_pty::CommandBuilder::from_shell(shell), cfg)
   }
 
-  #[cfg(not(windows))]
-  pub fn shell(shell: &str, cfg: &ProcConfig) -> Result<Self> {
-    Self::start(vec!["/bin/sh".into(), "-c".into(), shell.into()], cfg)
-  }
-
-  pub fn start(args: Vec<OsString>, cfg: &ProcConfig) -> Result<Self> {
-    let mut cmd = portable_pty::CommandBuilder::from_argv(args);
+  pub fn start(
+    mut cmd: portable_pty::CommandBuilder,
+    cfg: &ProcConfig,
+  ) -> Result<Self> {
     if let Some(cwd) = &cfg.cwd {
       cmd.cwd(cwd);
     } else {
@@ -410,7 +401,7 @@ impl UserData for LuaProc {
         let timeout = opts
           .map(|opts| opts.get("timeout"))
           .transpose()?
-          .unwrap_or(1000);
+          .unwrap_or(1500);
 
         let proc = &proc.lock()?;
         let timeout = Duration::from_millis(timeout);
@@ -425,7 +416,7 @@ impl UserData for LuaProc {
             {
               break ();
             }
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            tokio::time::sleep(Duration::from_millis(200)).await;
           }
         })
         .await

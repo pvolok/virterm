@@ -50,7 +50,7 @@ libc = "0.2.120"
 log = "0.4.14"
 mlua = { version = "0.8.0", features = ["async", "lua52", "serialize", "vendored"] }
 phf = { version = "0.10.1", features = ["macros"] }
-portable-pty = "0.7.0"
+portable-pty = { package = "mprocs-pty", path = "../mprocs/vendor/pty", version = "0.1.0" }
 serde = { version = "1.0.136", features = ["derive"] }
 serde_yaml = "0.8.24"
 tokio = { version = "1", features = ["full"] }
