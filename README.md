@@ -93,6 +93,28 @@ Sleeps for `duration_ms` milliseconds.
 
 Returns process' pid.
 
+#### `proc:cell(opts: table) -> table`
+
+Get info about one cell on the terminal screen.
+
+- **opts**
+  - **x** - column (starts from 0).
+  - **y** - row (starts from 0).
+
+Returns:
+
+- **content** - Cell content as a string.
+- **fg** - Cell foreground color if defined. Can be a number for
+  index colors or a string for rgb colors.
+- **bg** - Cell background color if defined. Can be a number for
+  index colors or a string for rgb colors.
+- **bold**
+- **italic**
+- **underline**
+- **inverse**
+- **wide** - True if the cell content takes more than one character
+  width.
+
 #### `proc:contents() -> string`
 
 Returns terminal screen content as a string.
@@ -120,8 +142,8 @@ Key examples:
 
 Send mouse click event.
 
-- **x** - column (top line is 0).
-- **y** - row (left row is 0).
+- **x** - column (starts from 0).
+- **y** - row (starts from 0).
 - **button** = _Optional_. Mouse button. Possible values: `"left"`, `"right"`,
   `"middle"`. Default is `"left"`.
 

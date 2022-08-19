@@ -2,7 +2,7 @@ use std::{collections::HashMap, io::Write, sync::Arc, time::Duration};
 
 use anyhow::{bail, Result};
 use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-use mlua::{LuaSerdeExt, UserData, Value};
+use mlua::{Lua, LuaSerdeExt, UserData, Value};
 use portable_pty::{ChildKiller, MasterPty, PtySize};
 use serde::Deserialize;
 
@@ -277,6 +277,36 @@ impl UserData for LuaProc {
       Ok(pid)
     });
 
+    // cell()
+    #[derive(Deserialize)]
+    struct CellOpts {
+      x: u16,
+      y: u16,
+    }
+    methods.add_method("cell", |lua, proc, opts: Value| {
+      let opts: CellOpts = lua.from_value(opts)?;
+      let cell = match proc
+        .lock()?
+        .lock_vt()?
+        .screen()
+        .cell(opts.y, opts.x)
+        .cloned()
+      {
+        Some(cell) => cell,
+        None => return Ok(Value::Nil),
+      };
+      let info = lua.create_table()?;
+      info.set("content", cell.contents())?;
+      info.set("fg", from_vt_color(lua, cell.fgcolor())?)?;
+      info.set("bg", from_vt_color(lua, cell.bgcolor())?)?;
+      info.set("bold", cell.bold())?;
+      info.set("italic", cell.italic())?;
+      info.set("underline", cell.underline())?;
+      info.set("inverse", cell.inverse())?;
+      info.set("wide", cell.is_wide())?;
+      Ok(Value::Table(info))
+    });
+
     // contents()
     methods.add_method("contents", |_, proc, ()| {
       let contents = proc.lock()?.lock_vt()?.screen().contents();
@@ -462,4 +492,19 @@ fn signal_from_string(sig: &str) -> Result<libc::c_int> {
     _ => bail!("Unknown signal: {}", sig),
   };
   Ok(sig)
+}
+
+fn from_vt_color<'lua>(
+  lua: &'lua Lua,
+  color: vt100::Color,
+) -> mlua::Result<Value<'lua>> {
+  let ret = match color {
+    vt100::Color::Default => Value::Nil,
+    vt100::Color::Idx(idx) => Value::Number(idx as f64),
+    vt100::Color::Rgb(r, g, b) => {
+      let s = format!("#{:02x}{:02x}{:02x}", r, g, b);
+      Value::String(lua.create_string(s.as_str())?)
+    }
+  };
+  Ok(ret)
 }

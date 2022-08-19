@@ -48,7 +48,7 @@ flexi_logger = { version = "0.22.3", default-features = false, features = ["colo
 image = "0.24.2"
 libc = "0.2.120"
 log = "0.4.14"
-mlua = { version = "0.8.0", features = ["async", "lua52", "serialize", "vendored"] }
+mlua = { version = "0.8.3", features = ["async", "lua52", "serialize", "vendored"] }
 phf = { version = "0.10.1", features = ["macros"] }
 portable-pty = { package = "mprocs-pty", path = "../mprocs/vendor/pty", version = "0.1.0" }
 serde = { version = "1.0.136", features = ["derive"] }
