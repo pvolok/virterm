@@ -25,6 +25,7 @@ Features:
     - [vt.start(command [, params]) -&gt; proc](#vtstartcommand--params---proc)
     - [vt.sleep(duration_ms: int)](#vtsleepduration_ms-int)
     - [proc:pid() -&gt; int](#procpid---int)
+    - [proc:cell(opts: table) -&gt; table](#proccellopts-table---table)
     - [proc:contents() -&gt; string](#proccontents---string)
     - [proc:send_str(str: string)](#procsend_strstr-string)
     - [proc:send_key(key: string)](#procsend_keykey-string)
@@ -39,7 +40,7 @@ Features:
     - [proc:dump_png(path: string)](#procdump_pngpath-string)
 
 <!-- Created by https://github.com/ekalinin/github-markdown-toc -->
-<!-- Added by: pvolok, at: Wed Jun 29 23:48:11 +07 2022 -->
+<!-- Added by: pvolok, at: Sat Aug 20 00:01:13 CEST 2022 -->
 
 <!--te-->
 
